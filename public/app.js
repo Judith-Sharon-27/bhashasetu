@@ -69,12 +69,17 @@ function renderKeys(){const l=lang(targetSel.value);$("#keyboardLabel").textCont
 renderKeys();$("#keyboardToggle").addEventListener("click",()=>{keyboard.hidden=!keyboard.hidden;if(!keyboard.hidden)renderKeys()});$("#closeKeyboard").addEventListener("click",()=>keyboard.hidden=true);
 $("#voice").addEventListener("click",()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(listening&&recognition){recognition.stop();return}if(!SR){status.textContent="Voice input isn't supported in this browser. Try Chrome or type instead.";$("#voiceStageStatus").textContent=status.textContent;return}recognition=new SR();recognition.lang=lang(nativeSel.value)[1];recognition.interimResults=true;recognition.continuous=false;recognition.onstart=()=>{listening=true;status.textContent="Listening in "+nativeSel.value+"…";$("#voice").innerHTML="■ <span>Stop</span>"};recognition.onresult=e=>{let final="",interim="";for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}input.value=final||interim};recognition.onerror=e=>{status.textContent="Voice input issue ("+e.error+"). Check microphone permission and selected speaking language.";$("#voiceStageStatus").textContent=status.textContent};recognition.onend=()=>{listening=false;$("#voice").innerHTML='◉ <span>Speak</span>';if(input.value.trim()){status.textContent="Heard you. Getting a reply…";$("#voiceStageStatus").textContent="Heard you. Your buddy is thinking…";sendMessage(input.value)}else if(voiceMode){status.textContent="I didn’t catch that. Tap Speak and try again.";$("#voiceStageStatus").textContent=status.textContent}};try{recognition.start()}catch{status.textContent="Couldn't start voice input. Please try again."}});
 function scriptLanguage(text){
- const ranges=[
-  ["Telugu",/[\u0C00-\u0C7F]/],["Tamil",/[\u0B80-\u0BFF]/],["Kannada",/[\u0C80-\u0CFF]/],["Malayalam",/[\u0D00-\u0D7F]/],
-  ["Bengali",/[\u0980-\u09FF]/],["Gujarati",/[\u0A80-\u0AFF]/],["Punjabi",/[\u0A00-\u0A7F]/],["Odia",/[\u0B00-\u0B7F]/],
-  ["Urdu",/[\u0600-\u06FF]/],["Hindi",/[\u0900-\u097F]/]
- ];
- for(const [name,re] of ranges)if(re.test(text))return name;
+ const cp=Array.from(text||"").map(ch=>ch.codePointAt(0));
+ if(cp.some(n=>n>=0x0C00&&n<=0x0C7F))return "Telugu";
+ if(cp.some(n=>n>=0x0B80&&n<=0x0BFF))return "Tamil";
+ if(cp.some(n=>n>=0x0C80&&n<=0x0CFF))return "Kannada";
+ if(cp.some(n=>n>=0x0D00&&n<=0x0D7F))return "Malayalam";
+ if(cp.some(n=>n>=0x0980&&n<=0x09FF))return "Bengali";
+ if(cp.some(n=>n>=0x0A80&&n<=0x0AFF))return "Gujarati";
+ if(cp.some(n=>n>=0x0A00&&n<=0x0A7F))return "Punjabi";
+ if(cp.some(n=>n>=0x0B00&&n<=0x0B7F))return "Odia";
+ if(cp.some(n=>n>=0x0600&&n<=0x06FF))return "Urdu";
+ if(cp.some(n=>n>=0x0900&&n<=0x097F))return "Hindi";
  return "English";
 }
 function cleanForSpeech(text){
@@ -88,21 +93,20 @@ function cleanForSpeech(text){
   .replace(/\s*([?!.,])\1+/g,"$1").replace(/\s+/g," ").trim();
 }
 function speechParts(text){
- const pattern=/[\u0C00-\u0C7F]+|[\u0B80-\u0BFF]+|[\u0C80-\u0CFF]+|[\u0D00-\u0D7F]+|[\u0980-\u09FF]+|[\u0A80-\u0AFF]+|[\u0A00-\u0A7F]+|[\u0B00-\u0B7F]+|[\u0600-\u06FF]+|[\u0900-\u097F]+|[A-Za-z]+(?:['’-][A-Za-z]+)*|[0-9]+|[^\s]+|\s+/g;
- const tokens=String(text).match(pattern)||[];
+ const chars=Array.from(String(text||""));
  const parts=[];
- for(const token of tokens){
-  const language=scriptLanguage(token);
-  if(/^\s+$/.test(token)||/^[^\p{L}\p{N}]+$/u.test(token)){
-   if(parts.length)parts[parts.length-1].text+=token;
-   else parts.push({language:"English",text:token});
-   continue;
-  }
-  const last=parts[parts.length-1];
-  if(last&&last.language===language)last.text+=token;
-  else parts.push({language,text:token});
+ let current="",currentLang="";
+ for(const ch of chars){
+  const lang=scriptLanguage(ch);
+  const isSpace=/\s/.test(ch),isPunctuation=/^[^\p{L}\p{N}]$/u.test(ch);
+  if(isSpace||isPunctuation){current+=ch;continue}
+  if(current && currentLang && lang!==currentLang){
+   parts.push({language:currentLang,text:current});current=ch;
+  }else current+=ch;
+  currentLang=lang;
  }
- return parts.filter(p=>p.text.trim());
+ if(current.trim())parts.push({language:currentLang||"English",text:current});
+ return parts;
 }
 function speechLocale(language){
  const locales={Telugu:"te-IN",Tamil:"ta-IN",Kannada:"kn-IN",Malayalam:"ml-IN",Bengali:"bn-IN",Assamese:"as-IN",Gujarati:"gu-IN",Punjabi:"pa-IN",Odia:"or-IN",Urdu:"ur-IN",Hindi:"hi-IN",English:"en-IN"};
@@ -118,28 +122,29 @@ function findLocalVoice(locale){
 }
 function speakReply(text){
  if(!("speechSynthesis"in window)){status.textContent="Spoken replies aren’t supported in this browser. Try Chrome.";$("#voiceStageStatus").textContent=status.textContent;return}
- const spoken=cleanForSpeech(text);lastSpokenReply=spoken;$("#voiceStageReply").textContent=text;$("#voiceStageReplay").disabled=false;
+ const spoken=cleanForSpeech(text);lastSpokenReply=spoken;$("#voiceStageReply").textContent=text;$("#voiceStageReplay").disabled=false;$("#voiceStageReplay").textContent=voiceMode?"🔊 Speak reply":"▶ Replay last reply";
  const synth=window.speechSynthesis;
  synth.cancel();
  const parts=speechParts(spoken);
  if(!parts.length){$("#voiceStageStatus").textContent="There’s no text to speak.";return}
  let index=0;
  const speakNext=()=>{
-  if(index>=parts.length){$("#voiceStageStatus").textContent=voiceMode?"Your turn — tap Speak below to reply.":"Reply finished.";return}
+  if(index>=parts.length){$("#voiceStageStatus").textContent=voiceMode?"Reply spoken. Tap Speak when you’re ready to answer.":"Reply finished.";return}
   const part=parts[index++],u=new SpeechSynthesisUtterance(part.text);
-  u.lang=speechLocale(part.language);u.rate=0.88;u.pitch=1;
+  u.lang=speechLocale(part.language);u.rate=0.86;u.pitch=1;
   const voice=findLocalVoice(u.lang);if(voice)u.voice=voice;
-  u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Your Bhasha buddy is speaking…":"Playing reply aloud…")+(voice?"":" If this sounds foreign, install an Indian-language voice in your device settings.")};
+  u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Speaking your reply…":"Playing message aloud…")+(voice?"":" Your device may need an Indian-language voice installed for accurate pronunciation.")};
   u.onend=speakNext;
-  u.onerror=()=>{if(index<parts.length){speakNext()}else $("#voiceStageStatus").textContent="Speech playback failed. Tap Replay last reply or check your device’s text-to-speech voices."};
+  u.onerror=()=>{$("#voiceStageStatus").textContent="Automatic playback was blocked or unavailable. Tap the Speak reply button below.";$("#voiceStageReplay").textContent="🔊 Speak reply";};
   synth.speak(u);
  };
- if(synth.getVoices().length)speakNext();
- else {synth.onvoiceschanged=()=>{synth.onvoiceschanged=null;speakNext()};setTimeout(()=>{if(index===0){synth.onvoiceschanged=null;speakNext()}},700)}
+ const startSpeaking=()=>{if(index===0)speakNext()};
+ if(synth.getVoices().length)startSpeaking();
+ else {synth.onvoiceschanged=()=>{synth.onvoiceschanged=null;startSpeaking()};setTimeout(()=>{if(index===0){synth.onvoiceschanged=null;startSpeaking()}},700)}
  if(!voiceMode)status.textContent="Playing message aloud.";
 }
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Listening in "+nativeSel.value+". Tap Speak and I’ll reply aloud in the language you use.";status.textContent="Voice mode listens in your “I understand” language ("+nativeSel.value+"). Change that selection to switch your speaking language.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else if("speechSynthesis"in window){speechSynthesis.cancel()}});
-$("#voiceStageReplay").addEventListener("click",()=>{if(lastSpokenReply)speakReply(lastSpokenReply)});
+$("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;const text=lastSpokenReply;if("speechSynthesis"in window){speechSynthesis.cancel();const parts=speechParts(text);let i=0;const next=()=>{if(i>=parts.length){$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";return}const part=parts[i++],u=new SpeechSynthesisUtterance(part.text);u.lang=speechLocale(part.language);u.rate=0.86;const v=findLocalVoice(u.lang);if(v)u.voice=v;u.onend=next;u.onerror=()=>{$("#voiceStageStatus").textContent="Could not play this voice. Check your device voice settings."};speechSynthesis.speak(u)};next()}});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
 $("#year")?.remove();updateMode();
 
