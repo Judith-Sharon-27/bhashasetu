@@ -151,8 +151,13 @@ app.post("/api/speech", rateLimit, async (req, res) => {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error("Gemini TTS failed:", response.status, data.error?.message || "Unknown error");
-      return res.status(502).json({ error: "Online speech generation failed. Check that your Gemini API key has access to the TTS model and available quota." });
+      const apiMessage = String(data.error?.message || "Unknown Gemini API error").slice(0, 300);
+      console.error("Gemini TTS failed:", response.status, apiMessage, "model:", model);
+      let hint = "Check Render logs for the exact error.";
+      if (response.status === 401 || response.status === 403) hint = "Check Gemini API key and TTS model access.";
+      if (response.status === 404) hint = "Check GEMINI_TTS_MODEL in Render; this model may be unavailable.";
+      if (response.status === 429) hint = "Check Gemini TTS quota or rate limits.";
+      return res.status(502).json({ error: "Gemini TTS error (" + response.status + "): " + apiMessage + " " + hint });
     }
     const audioPart = data.candidates?.[0]?.content?.parts?.find(part => part.inlineData?.data);
     if (!audioPart?.inlineData?.data) {
