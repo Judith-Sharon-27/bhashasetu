@@ -168,6 +168,49 @@ function findLocalVoice(locale){
  return voice||null;
 }
 let onlineAudio=null, onlineAudioUrl=null, speechRequest=0;
+function playLocalSpeech(text,requestId,onlineError){
+ if(!("speechSynthesis"in window)||!("SpeechSynthesisUtterance"in window)){
+  $("#voiceStageStatus").textContent="Online speech is unavailable (Gemini quota or service error), and this browser has no local speech engine. Check Gemini quota or billing to restore voice replies.";
+  $("#voiceStageReplay").disabled=false;return;
+ }
+ window.speechSynthesis.cancel();
+ const parts=speechParts(text).filter(p=>p.text.trim());
+ const queue=[];let skipped=[];
+ for(const part of parts){
+  const locale=speechLocale(part.language);
+  const voice=findLocalVoice(locale);
+  if(!voice && part.language!=="English"){skipped.push(part.language);continue}
+  const utterance=new SpeechSynthesisUtterance(part.text);
+  utterance.lang=locale;
+  if(voice)utterance.voice=voice;
+  utterance.rate=0.92;
+  queue.push(utterance);
+ }
+ if(!queue.length){
+  const unique=[...new Set(skipped)];
+  const languageText=unique.length?unique.join(", "):"this language";
+  $("#voiceStageStatus").textContent="Gemini online speech is out of quota, and Chrome has no matching local voice for "+languageText+". Check Gemini quota/billing or install a compatible voice in your computer's speech settings.";
+  $("#voiceStageReplay").disabled=false;return;
+ }
+ let i=0;
+ $("#voiceStageStatus").textContent="Gemini quota/service unavailable. Trying your computer’s installed voice…";
+ $("#voiceStageReplay").disabled=true;
+ const next=()=>{
+  if(requestId!==speechRequest)return;
+  if(i>=queue.length){
+   const unique=[...new Set(skipped)];
+   $("#voiceStageStatus").textContent=unique.length
+    ?"Finished local speech, but no local voice was available for: "+unique.join(", ")+". Check Gemini quota/billing for full online speech."
+    :"Reply spoken using your computer’s voice because Gemini online speech is unavailable.";
+   $("#voiceStageReplay").disabled=false;return;
+  }
+  const utterance=queue[i++];
+  utterance.onend=next;
+  utterance.onerror=()=>{if(requestId!==speechRequest)return;next()};
+  try{window.speechSynthesis.speak(utterance)}catch{next()}
+ };
+ next();
+}
 async function playOnlineSpeech(text){
  const clean=cleanForSpeech(text);
  if(!clean){$("#voiceStageStatus").textContent="There’s no text to speak.";return}
@@ -185,13 +228,12 @@ async function playOnlineSpeech(text){
   onlineAudio=new Audio(onlineAudioUrl);
   onlineAudio.preload="auto";
   onlineAudio.onended=()=>{$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";$("#voiceStageReplay").disabled=false;};
-  onlineAudio.onerror=()=>{$("#voiceStageStatus").textContent="The generated audio could not be played. Please tap Speak reply to try again.";$("#voiceStageReplay").disabled=false;};
+  onlineAudio.onerror=()=>{if(requestId!==speechRequest)return;playLocalSpeech(clean,requestId,"Audio playback failed");};
   await onlineAudio.play();
   $("#voiceStageStatus").textContent="Speaking your reply…";
  }catch(error){
   if(requestId!==speechRequest)return;
-  $("#voiceStageStatus").textContent=error.message||"Couldn’t generate speech. Please try again.";
-  $("#voiceStageReplay").disabled=false;
+  playLocalSpeech(clean,requestId,error.message||"Online speech generation failed");
  }
 }
 function speakReply(text){
