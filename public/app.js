@@ -70,30 +70,30 @@ renderKeys();$("#keyboardToggle").addEventListener("click",()=>{keyboard.hidden=
 $("#voice").addEventListener("click",()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(listening&&recognition){recognition.stop();return}if(!SR){status.textContent="Voice input isn't supported in this browser. Try Chrome or type instead.";$("#voiceStageStatus").textContent=status.textContent;return}recognition=new SR();recognition.lang=lang(voiceMode?targetSel.value:nativeSel.value)[1];recognition.interimResults=true;recognition.continuous=false;recognition.onstart=()=>{listening=true;status.textContent="Listening in "+nativeSel.value+"…";$("#voice").innerHTML="■ <span>Stop</span>"};recognition.onresult=e=>{let final="",interim="";for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}input.value=final||interim};recognition.onerror=e=>{status.textContent="Voice input issue ("+e.error+"). Check microphone permission and selected speaking language.";$("#voiceStageStatus").textContent=status.textContent};recognition.onend=()=>{listening=false;$("#voice").innerHTML='◉ <span>Speak</span>';if(input.value.trim()){status.textContent="Heard you. Getting a reply…";$("#voiceStageStatus").textContent="Heard you. Your buddy is thinking…";sendMessage(input.value)}else if(voiceMode){status.textContent="I didn’t catch that. Tap Speak and try again.";$("#voiceStageStatus").textContent=status.textContent}};try{recognition.start()}catch{status.textContent="Couldn't start voice input. Please try again."}});
 function scriptLanguage(text){
  const ranges=[
-  ["Telugu",/[\\u0C00-\\u0C7F]/],["Tamil",/[\\u0B80-\\u0BFF]/],["Kannada",/[\\u0C80-\\u0CFF]/],["Malayalam",/[\\u0D00-\\u0D7F]/],
-  ["Bengali",/[\\u0980-\\u09FF]/],["Gujarati",/[\\u0A80-\\u0AFF]/],["Punjabi",/[\\u0A00-\\u0A7F]/],["Odia",/[\\u0B00-\\u0B7F]/],
-  ["Urdu",/[\\u0600-\\u06FF]/],["Hindi",/[\\u0900-\\u097F]/],["Assamese",/[\\u0980-\\u09FF]/],["Devanagari",/[\\u0900-\\u097F]/]
+  ["Telugu",/[\u0C00-\u0C7F]/],["Tamil",/[\u0B80-\u0BFF]/],["Kannada",/[\u0C80-\u0CFF]/],["Malayalam",/[\u0D00-\u0D7F]/],
+  ["Bengali",/[\u0980-\u09FF]/],["Gujarati",/[\u0A80-\u0AFF]/],["Punjabi",/[\u0A00-\u0A7F]/],["Odia",/[\u0B00-\u0B7F]/],
+  ["Urdu",/[\u0600-\u06FF]/],["Hindi",/[\u0900-\u097F]/]
  ];
- for(const [name,re] of ranges)if(re.test(text))return name==="Devanagari"?"Hindi":name;
+ for(const [name,re] of ranges)if(re.test(text))return name;
  return "English";
 }
 function cleanForSpeech(text){
  return String(text)
-  .replace(/\\[([^\\]]+)\\]\\([^)]*\\)/g,"$1")
-  .replace(/\\*\\*(.*?)\\*\\*/gs,"$1").replace(/__(.*?)__/gs,"$1")
-  .replace(/\\*(.*?)\\*/gs,"$1").replace(/_(.*?)_/gs,"$1")
-  .replace(/`([^`]*)`/g,"$1").replace(/^\\s{0,3}#{1,6}\\s*/gm,"")
-  .replace(/^\\s*[-•*+]\\s+/gm,"").replace(/^\\s*\\d+[.)]\\s+/gm,"")
-  .replace(/[“”„]/g,"").replace(/[‘’]/g,"").replace(/^[\\\"']+|[\\\"']+$/g,"")
-  .replace(/\\s*([?!.,])\\1+/g,"$1").replace(/\\s+/g," ").trim();
+  .replace(/\[([^\]]+)\]\([^)]*\)/g,"$1")
+  .replace(/\*\*(.*?)\*\*/gs,"$1").replace(/__(.*?)__/gs,"$1")
+  .replace(/\*(.*?)\*/gs,"$1").replace(/_(.*?)_/gs,"$1")
+  .replace(/\x60([^\x60]*)\x60/g,"$1").replace(/^\s{0,3}#{1,6}\s*/gm,"")
+  .replace(/^\s*[-•*+]\s+/gm,"").replace(/^\s*\d+[.)]\s+/gm,"")
+  .replace(/[“”„]/g,"").replace(/[‘’]/g,"").replace(/^["']+|["']+$/g,"")
+  .replace(/\s*([?!.,])\1+/g,"$1").replace(/\s+/g," ").trim();
 }
 function speechParts(text){
- const pattern=/[\\u0C00-\\u0C7F]+|[\\u0B80-\\u0BFF]+|[\\u0C80-\\u0CFF]+|[\\u0D00-\\u0D7F]+|[\\u0980-\\u09FF]+|[\\u0A80-\\u0AFF]+|[\\u0A00-\\u0A7F]+|[\\u0B00-\\u0B7F]+|[\\u0600-\\u06FF]+|[\\u0900-\\u097F]+|[A-Za-z]+(?:['’-][A-Za-z]+)*|[0-9]+|[^\\s]+|\\s+/g;
+ const pattern=/[\u0C00-\u0C7F]+|[\u0B80-\u0BFF]+|[\u0C80-\u0CFF]+|[\u0D00-\u0D7F]+|[\u0980-\u09FF]+|[\u0A80-\u0AFF]+|[\u0A00-\u0A7F]+|[\u0B00-\u0B7F]+|[\u0600-\u06FF]+|[\u0900-\u097F]+|[A-Za-z]+(?:['’-][A-Za-z]+)*|[0-9]+|[^\s]+|\s+/g;
  const tokens=String(text).match(pattern)||[];
  const parts=[];
  for(const token of tokens){
   const language=scriptLanguage(token);
-  if(/^\\s+$/.test(token)||/^[^\\p{L}\\p{N}]+$/u.test(token)){
+  if(/^\s+$/.test(token)||/^[^\p{L}\p{N}]+$/u.test(token)){
    if(parts.length)parts[parts.length-1].text+=token;
    else parts.push({language:"English",text:token});
    continue;
@@ -134,12 +134,10 @@ function speakReply(text){
   u.onerror=()=>{if(index<parts.length){speakNext()}else $("#voiceStageStatus").textContent="Speech playback failed. Tap Replay last reply or check your device’s text-to-speech voices."};
   synth.speak(u);
  };
- // Some browsers load installed voices asynchronously; start with their current list and use a local Indian voice whenever available.
  if(synth.getVoices().length)speakNext();
  else {synth.onvoiceschanged=()=>{synth.onvoiceschanged=null;speakNext()};setTimeout(()=>{if(index===0){synth.onvoiceschanged=null;speakNext()}},700)}
  if(!voiceMode)status.textContent="Playing message aloud.";
 }
-
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Speaking language: "+targetSel.value+". Tap Speak, say something naturally, and I’ll answer aloud in the language you use.";status.textContent="Voice mode listens in your “I want to learn” language ("+targetSel.value+"). Change that selection to switch the language you practise.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else if("speechSynthesis"in window){speechSynthesis.cancel()}});
 $("#voiceStageReplay").addEventListener("click",()=>{if(lastSpokenReply)speakReply(lastSpokenReply)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
