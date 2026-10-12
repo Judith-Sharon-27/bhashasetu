@@ -30,7 +30,7 @@ function lang(name){return languages.find(x=>x[0]===name)||languages[0]}
 function updateMode(){document.querySelectorAll(".mode").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));$("#modeDescription").textContent=mode==="learn"?`Get translations and explanations in ${nativeSel.value}, with examples in ${targetSel.value}.`:"Have a natural conversation. Your buddy aims to reply in the language you use.";$("#modeTag").textContent=mode==="learn"?"LEARNING MODE":"CHAT MODE"}
 function resetChat(){history=[];messages.innerHTML='<div class="msg bot"><div class="mini-avatar">भा</div><div><small class="sender">BHASHA BUDDY</small><div class="bubble">Your language pair is ready! Ask a question, or choose a starter prompt below.<div class="prompts"><button data-prompt="Teach me how to greet someone politely.">Teach me a greeting ↗</button><button data-prompt="How do I introduce myself?">Introduce myself ↗</button></div></div></div></div>'}
 function addMessage(role,text){const row=document.createElement("div");row.className="msg "+(role==="user"?"user":"bot");if(role!=="user"){const av=document.createElement("div");av.className="mini-avatar";av.textContent="भा";row.append(av)}const wrap=document.createElement("div"),sender=document.createElement("small"),bubble=document.createElement("div");sender.className="sender";sender.textContent=role==="user"?"YOU":"BHASHA BUDDY";bubble.className="bubble";bubble.textContent=text;wrap.append(sender,bubble);row.append(wrap);messages.append(row);messages.scrollTop=messages.scrollHeight}
-async function sendMessage(value){const text=(value??input.value).trim();if(!text||send.disabled)return;input.value="";addMessage("user",text);history.push({role:"user",content:text});send.disabled=true;send.textContent="Thinking…";status.textContent="";try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12),mode,nativeLanguage:nativeSel.value,targetLanguage:targetSel.value})});const data=await r.json();if(!r.ok)throw Error(data.error||"Something went wrong.");history.push({role:"assistant",content:data.reply});addMessage("assistant",data.reply);speakReply(data.reply)}catch(e){addMessage("assistant",e.message||"I couldn't connect just now. Please try again.")}finally{send.disabled=false;send.textContent="Send ↑";input.focus()}}
+async function sendMessage(value){const text=(value??input.value).trim();if(!text||send.disabled)return;input.value="";addMessage("user",text);history.push({role:"user",content:text});send.disabled=true;send.textContent="Thinking…";status.textContent="";try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12),mode,nativeLanguage:nativeSel.value,targetLanguage:targetSel.value})});const data=await r.json();if(!r.ok)throw Error(data.error||"Something went wrong.");history.push({role:"assistant",content:data.reply});addMessage("assistant",data.reply);speakReply(data.reply)}catch(e){const err=e.message||"I couldn’t connect just now. Please try again.";addMessage("assistant",err);if(voiceMode){$("#voiceStageReply").textContent=err;$("#voiceStageStatus").textContent="I couldn’t get a reply this time. Check your connection and try again."}}finally{send.disabled=false;send.textContent="Send ↑";input.focus()}}
 $("#chatForm").addEventListener("submit",e=>{e.preventDefault();sendMessage()});messages.addEventListener("click",e=>{const b=e.target.closest("[data-prompt]");if(b)sendMessage(b.dataset.prompt)});
 document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>{mode=b.dataset.mode;updateMode()}));
 [nativeSel,targetSel].forEach(s=>s.addEventListener("change",()=>{updateMode();renderKeys();resetChat()}));
@@ -68,9 +68,78 @@ function transliterateForKeyboard(){
 function renderKeys(){const l=lang(targetSel.value);$("#keyboardLabel").textContent=l[0].toUpperCase()+" · "+l[2];keys.replaceChildren();l[3].split(/\s+/).forEach(c=>{const b=document.createElement("button");b.type="button";b.textContent=c;b.addEventListener("click",()=>insert(c));keys.append(b)});for(const [label,action] of [["Space","space"],["⌫","back"],["Clear","clear"]]){const b=document.createElement("button");b.type="button";b.textContent=label;b.addEventListener("click",()=>{if(action==="space")insert(" ");if(action==="clear"){input.value="";input.focus()}if(action==="back"){const a=input.selectionStart,z=input.selectionEnd;if(a===z&&a>0)input.setRangeText("",a-1,z,"end");else input.setRangeText("",a,z,"end");input.focus()}});keys.append(b)}}
 renderKeys();$("#keyboardToggle").addEventListener("click",()=>{keyboard.hidden=!keyboard.hidden;if(!keyboard.hidden)renderKeys()});$("#closeKeyboard").addEventListener("click",()=>keyboard.hidden=true);
 $("#voice").addEventListener("click",()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(listening&&recognition){recognition.stop();return}if(!SR){status.textContent="Voice input isn't supported in this browser. Try Chrome or type instead.";$("#voiceStageStatus").textContent=status.textContent;return}recognition=new SR();recognition.lang=lang(voiceMode?targetSel.value:nativeSel.value)[1];recognition.interimResults=true;recognition.continuous=false;recognition.onstart=()=>{listening=true;status.textContent="Listening in "+nativeSel.value+"…";$("#voice").innerHTML="■ <span>Stop</span>"};recognition.onresult=e=>{let final="",interim="";for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}input.value=final||interim};recognition.onerror=e=>{status.textContent="Voice input issue ("+e.error+"). Check microphone permission and selected speaking language.";$("#voiceStageStatus").textContent=status.textContent};recognition.onend=()=>{listening=false;$("#voice").innerHTML='◉ <span>Speak</span>';if(input.value.trim()){status.textContent="Heard you. Getting a reply…";$("#voiceStageStatus").textContent="Heard you. Your buddy is thinking…";sendMessage(input.value)}else if(voiceMode){status.textContent="I didn’t catch that. Tap Speak and try again.";$("#voiceStageStatus").textContent=status.textContent}};try{recognition.start()}catch{status.textContent="Couldn't start voice input. Please try again."}});
-function spokenLanguage(text){const ranges=[["Telugu",/[\u0C00-\u0C7F]/],["Tamil",/[\u0B80-\u0BFF]/],["Kannada",/[\u0C80-\u0CFF]/],["Malayalam",/[\u0D00-\u0D7F]/],["Bengali",/[\u0980-\u09FF]/],["Gujarati",/[\u0A80-\u0AFF]/],["Punjabi",/[\u0A00-\u0A7F]/],["Odia",/[\u0B00-\u0B7F]/],["Urdu",/[\u0600-\u06FF]/],["Hindi",/[\u0900-\u097F]/]];for(const [name,re] of ranges){if(re.test(text))return lang(name)[1]}return lang(voiceMode?targetSel.value:(mode==="learn"?targetSel.value:nativeSel.value))[1]}
-function cleanForSpeech(text){return String(text).replace(/\*\*(.*?)\*\*/gs,"$1").replace(/\*(.*?)\*/gs,"$1").replace(/\`([^\`]*)\`/g,"$1").replace(/^\s{0,3}#{1,6}\s*/gm,"").replace(/^\s*[-•]\s+/gm,"").replace(/[“”„]/g,"").replace(/[‘’]/g,"").replace(/^[\"']+|[\"']+$/g,"").replace(/\s*([?!.,])\1+/g,"$1").replace(/\s+/g," ").trim()}
-function speakReply(text){if(!("speechSynthesis"in window)){status.textContent="Spoken replies aren't supported in this browser. Try Chrome.";$("#voiceStageStatus").textContent=status.textContent;return}const spoken=cleanForSpeech(text);lastSpokenReply=spoken;$("#voiceStageReply").textContent=text;$("#voiceStageReplay").disabled=false;const u=new SpeechSynthesisUtterance(spoken);u.lang=spokenLanguage(spoken);u.rate=0.92;const chooseVoice=()=>{const voices=speechSynthesis.getVoices();const wanted=u.lang.toLowerCase();const base=wanted.split("-")[0];let voice=voices.find(v=>v.lang.toLowerCase()===wanted);if(!voice&&base==="en")voice=voices.find(v=>v.lang.toLowerCase()==="en-in")||voices.find(v=>v.lang.toLowerCase().startsWith("en-in"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-gb"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-"));if(!voice&&base!=="en")voice=voices.find(v=>v.lang.toLowerCase().startsWith(base+"-")||v.lang.toLowerCase()===base);if(voice)u.voice=voice};chooseVoice();u.onstart=()=>{$("#voiceStageStatus").textContent="Your Bhasha buddy is speaking…"};u.onend=()=>{$("#voiceStageStatus").textContent=voiceMode?"Your turn — tap Speak below to reply.":"Reply finished."};u.onerror=()=>{$("#voiceStageStatus").textContent="This device may not have a voice for "+u.lang+". Try another browser or device voice."};speechSynthesis.cancel();speechSynthesis.speak(u);if(!voiceMode)status.textContent="Playing message aloud."}
+function scriptLanguage(text){
+ const ranges=[
+  ["Telugu",/[\\u0C00-\\u0C7F]/],["Tamil",/[\\u0B80-\\u0BFF]/],["Kannada",/[\\u0C80-\\u0CFF]/],["Malayalam",/[\\u0D00-\\u0D7F]/],
+  ["Bengali",/[\\u0980-\\u09FF]/],["Gujarati",/[\\u0A80-\\u0AFF]/],["Punjabi",/[\\u0A00-\\u0A7F]/],["Odia",/[\\u0B00-\\u0B7F]/],
+  ["Urdu",/[\\u0600-\\u06FF]/],["Hindi",/[\\u0900-\\u097F]/],["Assamese",/[\\u0980-\\u09FF]/],["Devanagari",/[\\u0900-\\u097F]/]
+ ];
+ for(const [name,re] of ranges)if(re.test(text))return name==="Devanagari"?"Hindi":name;
+ return "English";
+}
+function cleanForSpeech(text){
+ return String(text)
+  .replace(/\\[([^\\]]+)\\]\\([^)]*\\)/g,"$1")
+  .replace(/\\*\\*(.*?)\\*\\*/gs,"$1").replace(/__(.*?)__/gs,"$1")
+  .replace(/\\*(.*?)\\*/gs,"$1").replace(/_(.*?)_/gs,"$1")
+  .replace(/`([^`]*)`/g,"$1").replace(/^\\s{0,3}#{1,6}\\s*/gm,"")
+  .replace(/^\\s*[-•*+]\\s+/gm,"").replace(/^\\s*\\d+[.)]\\s+/gm,"")
+  .replace(/[“”„]/g,"").replace(/[‘’]/g,"").replace(/^[\\\"']+|[\\\"']+$/g,"")
+  .replace(/\\s*([?!.,])\\1+/g,"$1").replace(/\\s+/g," ").trim();
+}
+function speechParts(text){
+ const pattern=/[\\u0C00-\\u0C7F]+|[\\u0B80-\\u0BFF]+|[\\u0C80-\\u0CFF]+|[\\u0D00-\\u0D7F]+|[\\u0980-\\u09FF]+|[\\u0A80-\\u0AFF]+|[\\u0A00-\\u0A7F]+|[\\u0B00-\\u0B7F]+|[\\u0600-\\u06FF]+|[\\u0900-\\u097F]+|[A-Za-z]+(?:['’-][A-Za-z]+)*|[0-9]+|[^\\s]+|\\s+/g;
+ const tokens=String(text).match(pattern)||[];
+ const parts=[];
+ for(const token of tokens){
+  const language=scriptLanguage(token);
+  if(/^\\s+$/.test(token)||/^[^\\p{L}\\p{N}]+$/u.test(token)){
+   if(parts.length)parts[parts.length-1].text+=token;
+   else parts.push({language:"English",text:token});
+   continue;
+  }
+  const last=parts[parts.length-1];
+  if(last&&last.language===language)last.text+=token;
+  else parts.push({language,text:token});
+ }
+ return parts.filter(p=>p.text.trim());
+}
+function speechLocale(language){
+ const locales={Telugu:"te-IN",Tamil:"ta-IN",Kannada:"kn-IN",Malayalam:"ml-IN",Bengali:"bn-IN",Assamese:"as-IN",Gujarati:"gu-IN",Punjabi:"pa-IN",Odia:"or-IN",Urdu:"ur-IN",Hindi:"hi-IN",English:"en-IN"};
+ return locales[language]||"en-IN";
+}
+function findLocalVoice(locale){
+ const voices=window.speechSynthesis.getVoices()||[];
+ const wanted=locale.toLowerCase(),base=wanted.split("-")[0];
+ let voice=voices.find(v=>v.lang.toLowerCase()===wanted);
+ if(!voice)voice=voices.find(v=>v.lang.toLowerCase().startsWith(base+"-"));
+ if(!voice&&base==="en")voice=voices.find(v=>v.lang.toLowerCase()==="en-in")||voices.find(v=>v.lang.toLowerCase().startsWith("en-in"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-gb"));
+ return voice||null;
+}
+function speakReply(text){
+ if(!("speechSynthesis"in window)){status.textContent="Spoken replies aren’t supported in this browser. Try Chrome.";$("#voiceStageStatus").textContent=status.textContent;return}
+ const spoken=cleanForSpeech(text);lastSpokenReply=spoken;$("#voiceStageReply").textContent=text;$("#voiceStageReplay").disabled=false;
+ const synth=window.speechSynthesis;
+ synth.cancel();
+ const parts=speechParts(spoken);
+ if(!parts.length){$("#voiceStageStatus").textContent="There’s no text to speak.";return}
+ let index=0;
+ const speakNext=()=>{
+  if(index>=parts.length){$("#voiceStageStatus").textContent=voiceMode?"Your turn — tap Speak below to reply.":"Reply finished.";return}
+  const part=parts[index++],u=new SpeechSynthesisUtterance(part.text);
+  u.lang=speechLocale(part.language);u.rate=0.88;u.pitch=1;
+  const voice=findLocalVoice(u.lang);if(voice)u.voice=voice;
+  u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Your Bhasha buddy is speaking…":"Playing reply aloud…")+(voice?"":" If this sounds foreign, install an Indian-language voice in your device settings.")};
+  u.onend=speakNext;
+  u.onerror=()=>{if(index<parts.length){speakNext()}else $("#voiceStageStatus").textContent="Speech playback failed. Tap Replay last reply or check your device’s text-to-speech voices."};
+  synth.speak(u);
+ };
+ // Some browsers load installed voices asynchronously; start with their current list and use a local Indian voice whenever available.
+ if(synth.getVoices().length)speakNext();
+ else {synth.onvoiceschanged=()=>{synth.onvoiceschanged=null;speakNext()};setTimeout(()=>{if(index===0){synth.onvoiceschanged=null;speakNext()}},700)}
+ if(!voiceMode)status.textContent="Playing message aloud.";
+}
+
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Speaking language: "+targetSel.value+". Tap Speak, say something naturally, and I’ll answer aloud in the language you use.";status.textContent="Voice mode listens in your “I want to learn” language ("+targetSel.value+"). Change that selection to switch the language you practise.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else if("speechSynthesis"in window){speechSynthesis.cancel()}});
 $("#voiceStageReplay").addEventListener("click",()=>{if(lastSpokenReply)speakReply(lastSpokenReply)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
