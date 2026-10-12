@@ -36,6 +36,35 @@ document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>{mo
 [nativeSel,targetSel].forEach(s=>s.addEventListener("change",()=>{updateMode();renderKeys();resetChat()}));
 $("#swap").addEventListener("click",()=>{const x=nativeSel.value;nativeSel.value=targetSel.value;targetSel.value=x;updateMode();renderKeys();resetChat()});
 function insert(text){const a=input.selectionStart??input.value.length,b=input.selectionEnd??input.value.length;input.setRangeText(text,a,b,"end");input.focus()}
+const phoneticMaps={
+Telugu:{vowels:{aa:"ఆ",ii:"ఈ",ee:"ఈ",uu:"ఊ",oo:"ఊ",ai:"ఐ",au:"ఔ",a:"అ",i:"ఇ",u:"ఉ",e:"ఎ",o:"ఒ"},cons:{ksh:"క్ష",kh:"ఖ",gh:"ఘ",chh:"ఛ",ch:"చ",jh:"ఝ",th:"థ",dh:"ధ",ph:"ఫ",bh:"భ",sh:"శ",Sh:"ష",ng:"ఙ",ny:"ఞ",tt:"ట",dd:"డ",T:"ట",D:"డ",N:"ణ",L:"ళ",R:"ఱ",k:"క",g:"గ",c:"చ",j:"జ",t:"త",d:"ద",n:"న",p:"ప",b:"బ",m:"మ",y:"య",r:"ర",l:"ల",v:"వ",w:"వ",s:"స",h:"హ"}},
+Tamil:{vowels:{aa:"ஆ",ii:"ஈ",ee:"ஈ",uu:"ஊ",oo:"ஊ",ai:"ஐ",au:"ஔ",a:"அ",i:"இ",u:"உ",e:"எ",o:"ஒ"},cons:{ng:"ங",ny:"ஞ",sh:"ஷ",zh:"ழ",th:"த",dh:"த",kh:"க",gh:"க",ch:"ச",jh:"ஜ",tt:"ட",dd:"ட",nn:"ண",L:"ள",R:"ற",k:"க",g:"க",c:"ச",j:"ஜ",t:"த",d:"ட",n:"ந",p:"ப",b:"ப",m:"ம",y:"ய",r:"ர",l:"ல",v:"வ",w:"வ",s:"ஸ",h:"ஹ"}},
+Hindi:{vowels:{aa:"आ",ii:"ई",ee:"ई",uu:"ऊ",oo:"ऊ",ai:"ऐ",au:"औ",a:"अ",i:"इ",u:"उ",e:"ए",o:"ओ"},cons:{ksh:"क्ष",kh:"ख",gh:"घ",chh:"छ",ch:"च",jh:"झ",th:"थ",dh:"ध",ph:"फ",bh:"भ",sh:"श",ng:"ङ",ny:"ञ",tt:"ट",dd:"ड",T:"ट",D:"ड",N:"ण",k:"क",g:"ग",c:"च",j:"ज",t:"त",d:"द",n:"न",p:"प",b:"ब",m:"म",y:"य",r:"र",l:"ल",v:"व",w:"व",s:"स",h:"ह"}}
+};
+const vowelSigns={Telugu:{a:"",aa:"ా",i:"ి",ii:"ీ",ee:"ీ",u:"ు",uu:"ూ",oo:"ూ",e:"ె",E:"ే",ai:"ై",o:"ొ",O:"ో",au:"ౌ"},Tamil:{a:"",aa:"ா",i:"ி",ii:"ீ",ee:"ீ",u:"ு",uu:"ூ",oo:"ூ",e:"ெ",E:"ே",ai:"ை",o:"ொ",O:"ோ",au:"ௌ"},Hindi:{a:"",aa:"ा",i:"ि",ii:"ी",ee:"ी",u:"ु",uu:"ू",oo:"ू",e:"े",ai:"ै",o:"ो",au:"ौ"}};
+function transliterateRoman(text,language=targetSel.value){
+ const map=phoneticMaps[language];if(!map)return text;
+ const vowels=map.vowels,cons=map.cons,signs=vowelSigns[language];let out="",i=0;
+ const keys=Object.keys(cons).sort((a,b)=>b.length-a.length);
+ while(i<text.length){
+  const ch=text[i];
+  if(!/[a-zA-Z]/.test(ch)){out+=ch;i++;continue}
+  const rest=text.slice(i);let c=keys.find(k=>rest.startsWith(k));
+  if(c){const base=cons[c];i+=c.length;let vk=Object.keys(vowels).sort((a,b)=>b.length-a.length).find(k=>text.slice(i).toLowerCase().startsWith(k.toLowerCase()));if(vk){const typed=text.slice(i,i+vk.length);const signKey=typed==="E"?"E":typed==="O"?"O":vk.toLowerCase();out+=base+(signs[signKey]??signs[signKey.toLowerCase()]??"");i+=vk.length}else{out+=base+"్"}continue}
+  let v=Object.keys(vowels).sort((a,b)=>b.length-a.length).find(k=>rest.toLowerCase().startsWith(k.toLowerCase()));
+  if(v){out+=vowels[v];i+=v.length;continue}
+  out+=ch;i++;
+ }
+ return out.replace(/్([అఆఇఈఉఊఎఏఐఒఓఔ])/g,(_,v)=>v);
+}
+function transliterateForKeyboard(){
+ const raw=input.value;if(!raw.trim())return;
+ const start=input.selectionStart??raw.length,end=input.selectionEnd??raw.length;
+ const before=raw.slice(0,start),selected=raw.slice(start,end),after=raw.slice(end);
+ const convert=s=>s.split(/(\s+)/).map(part=>/^\s+$/.test(part)?part:transliterateRoman(part,targetSel.value)).join("");
+ input.value=convert(before)+convert(selected)+convert(after);
+ input.setSelectionRange(convert(before).length,convert(before).length+convert(selected).length);input.focus();
+}
 function renderKeys(){const l=lang(targetSel.value);$("#keyboardLabel").textContent=l[0].toUpperCase()+" · "+l[2];keys.replaceChildren();l[3].split(/\s+/).forEach(c=>{const b=document.createElement("button");b.type="button";b.textContent=c;b.addEventListener("click",()=>insert(c));keys.append(b)});for(const [label,action] of [["Space","space"],["⌫","back"],["Clear","clear"]]){const b=document.createElement("button");b.type="button";b.textContent=label;b.addEventListener("click",()=>{if(action==="space")insert(" ");if(action==="clear"){input.value="";input.focus()}if(action==="back"){const a=input.selectionStart,z=input.selectionEnd;if(a===z&&a>0)input.setRangeText("",a-1,z,"end");else input.setRangeText("",a,z,"end");input.focus()}});keys.append(b)}}
 renderKeys();$("#keyboardToggle").addEventListener("click",()=>{keyboard.hidden=!keyboard.hidden;if(!keyboard.hidden)renderKeys()});$("#closeKeyboard").addEventListener("click",()=>keyboard.hidden=true);
 $("#voice").addEventListener("click",()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(listening&&recognition){recognition.stop();return}if(!SR){status.textContent="Voice input isn't supported in this browser. Try Chrome or type instead.";$("#voiceStageStatus").textContent=status.textContent;return}recognition=new SR();recognition.lang=lang(voiceMode?targetSel.value:nativeSel.value)[1];recognition.interimResults=true;recognition.continuous=false;recognition.onstart=()=>{listening=true;status.textContent="Listening in "+nativeSel.value+"…";$("#voice").innerHTML="■ <span>Stop</span>"};recognition.onresult=e=>{let final="",interim="";for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}input.value=final||interim};recognition.onerror=e=>{status.textContent="Voice input issue ("+e.error+"). Check microphone permission and selected speaking language.";$("#voiceStageStatus").textContent=status.textContent};recognition.onend=()=>{listening=false;$("#voice").innerHTML='◉ <span>Speak</span>';if(input.value.trim()){status.textContent="Heard you. Getting a reply…";$("#voiceStageStatus").textContent="Heard you. Your buddy is thinking…";sendMessage(input.value)}else if(voiceMode){status.textContent="I didn’t catch that. Tap Speak and try again.";$("#voiceStageStatus").textContent=status.textContent}};try{recognition.start()}catch{status.textContent="Couldn't start voice input. Please try again."}});
@@ -46,3 +75,7 @@ $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voic
 $("#voiceStageReplay").addEventListener("click",()=>{if(lastSpokenReply)speakReply(lastSpokenReply)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
 $("#year")?.remove();updateMode();
+
+const phoneticInput=$("#phoneticInput");
+$("#convertPhonetic").addEventListener("click",()=>{const value=phoneticInput.value.trim();if(!value)return;insert(transliterateRoman(value,targetSel.value));phoneticInput.value=""});
+phoneticInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("#convertPhonetic").click()}});
