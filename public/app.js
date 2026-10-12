@@ -28,9 +28,54 @@ for(const [name,code,script] of languages){for(const sel of [nativeSel,targetSel
 nativeSel.value="Telugu";targetSel.value="Sanskrit";let mode="learn",history=[],recognition=null,listening=false,voiceMode=false,lastSpokenReply="";
 function lang(name){return languages.find(x=>x[0]===name)||languages[0]}
 function updateMode(){document.querySelectorAll(".mode").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));$("#modeDescription").textContent=mode==="learn"?`Get translations and explanations in ${nativeSel.value}, with examples in ${targetSel.value}.`:"Have a natural conversation. Your buddy aims to reply in the language you use.";$("#modeTag").textContent=mode==="learn"?"LEARNING MODE":"CHAT MODE"}
-function resetChat(){history=[];messages.innerHTML='<div class="msg bot"><div class="mini-avatar">भा</div><div><small class="sender">BHASHA BUDDY</small><div class="bubble">Your language pair is ready! Ask a question, or choose a starter prompt below.<div class="prompts"><button data-prompt="Teach me how to greet someone politely.">Teach me a greeting ↗</button><button data-prompt="How do I introduce myself?">Introduce myself ↗</button></div></div></div></div>'}
+const CHAT_STORAGE_KEY="bhashasetu-chat-history-v1";
+let savedChats=loadSavedChats(),activeChatId=null;
+function loadSavedChats(){try{const parsed=JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY)||"[]");return Array.isArray(parsed)?parsed.filter(c=>c&&typeof c.id==="string"&&Array.isArray(c.messages)):[]}catch{return []}}
+function persistChats(){try{localStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(savedChats.slice(0,60)))}catch{status.textContent="Chat history could not be saved. Your browser storage may be full."}}
+function welcomeMarkup(){return '<div class="msg bot"><div class="mini-avatar">भा</div><div><small class="sender">BHASHA BUDDY</small><div class="bubble">Your language pair is ready! Ask a question, or choose a starter prompt below.<div class="prompts"><button data-prompt="Teach me how to greet someone politely.">Teach me a greeting ↗</button><button data-prompt="How do I introduce myself?">Introduce myself ↗</button></div></div></div></div>'}
+function renderHistory(){
+ const list=$("#chatHistoryList");if(!list)return;list.innerHTML="";
+ const sorted=[...savedChats].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+ if(!sorted.length){const empty=document.createElement("p");empty.className="history-empty";empty.textContent="Your saved conversations will appear here.";list.append(empty);return}
+ for(const chat of sorted){
+  const item=document.createElement("div");item.className="history-item"+(chat.id===activeChatId?" active":"");
+  const open=document.createElement("button");open.type="button";open.className="history-open";open.textContent=chat.title||"Conversation";open.title="Open saved conversation";
+  const meta=document.createElement("small");meta.textContent=(chat.nativeLanguage||"") +" → "+(chat.targetLanguage||"")+" · "+new Date(chat.updatedAt||Date.now()).toLocaleDateString();
+  open.append(meta);open.addEventListener("click",()=>openSavedChat(chat.id));
+  const del=document.createElement("button");del.type="button";del.className="history-delete";del.textContent="×";del.title="Delete conversation";del.setAttribute("aria-label","Delete "+(chat.title||"conversation"));
+  del.addEventListener("click",()=>{if(!confirm("Delete this saved conversation? This cannot be undone."))return;savedChats=savedChats.filter(c=>c.id!==chat.id);persistChats();if(activeChatId===chat.id)startNewChat(false);renderHistory()});
+  item.append(open,del);list.append(item);
+ }
+}
+function ensureActiveChat(){
+ if(activeChatId){const existing=savedChats.find(c=>c.id===activeChatId);if(existing)return existing}
+ const chat={id:"chat-"+Date.now()+"-"+Math.random().toString(36).slice(2,8),title:"New conversation",createdAt:Date.now(),updatedAt:Date.now(),nativeLanguage:nativeSel.value,targetLanguage:targetSel.value,mode,messages:[]};
+ savedChats.unshift(chat);activeChatId=chat.id;return chat;
+}
+function saveCurrentChat(){
+ const chat=savedChats.find(c=>c.id===activeChatId);if(!chat)return;
+ chat.nativeLanguage=nativeSel.value;chat.targetLanguage=targetSel.value;chat.mode=mode;chat.messages=history.map(m=>({role:m.role,content:m.content}));
+ const first=chat.messages.find(m=>m.role==="user");
+ chat.title=first?(first.content.length>48?first.content.slice(0,48).trim()+"…":first.content):"New conversation";
+ chat.updatedAt=Date.now();savedChats=[chat,...savedChats.filter(c=>c.id!==chat.id)].slice(0,60);persistChats();renderHistory();
+}
+function openSavedChat(id){
+ const chat=savedChats.find(c=>c.id===id);if(!chat)return;
+ activeChatId=id;history=chat.messages.map(m=>({role:m.role,content:m.content}));nativeSel.value=chat.nativeLanguage||"Telugu";targetSel.value=chat.targetLanguage||"Sanskrit";mode=chat.mode||"learn";updateMode();renderKeys();messages.innerHTML="";
+ if(history.length)history.forEach(m=>addMessage(m.role,m.content));else messages.innerHTML=welcomeMarkup();
+ if("speechSynthesis"in window)speechSynthesis.cancel();if(onlineAudio){onlineAudio.pause();onlineAudio=null}
+ $("#voiceStageReply").textContent="Your tutor’s spoken replies will appear here.";$("#voiceStageStatus").textContent="Saved conversation opened. Send a message to continue.";
+ renderHistory();messages.scrollTop=messages.scrollHeight;
+}
+function startNewChat(render=true){
+ activeChatId=null;history=[];messages.innerHTML=welcomeMarkup();if("speechSynthesis"in window)speechSynthesis.cancel();
+ if(typeof onlineAudio!=="undefined"&&onlineAudio){onlineAudio.pause();onlineAudio=null}
+ if(typeof onlineAudioUrl!=="undefined"&&onlineAudioUrl){URL.revokeObjectURL(onlineAudioUrl);onlineAudioUrl=null}
+ if(render)renderHistory();
+}
+function resetChat(){if(history.length)saveCurrentChat();startNewChat()}
 function addMessage(role,text){const row=document.createElement("div");row.className="msg "+(role==="user"?"user":"bot");if(role!=="user"){const av=document.createElement("div");av.className="mini-avatar";av.textContent="भा";row.append(av)}const wrap=document.createElement("div"),sender=document.createElement("small"),bubble=document.createElement("div");sender.className="sender";sender.textContent=role==="user"?"YOU":"BHASHA BUDDY";bubble.className="bubble";bubble.textContent=text;wrap.append(sender,bubble);row.append(wrap);messages.append(row);messages.scrollTop=messages.scrollHeight}
-async function sendMessage(value){const text=(value??input.value).trim();if(!text||send.disabled)return;input.value="";addMessage("user",text);history.push({role:"user",content:text});send.disabled=true;send.textContent="Thinking…";status.textContent="";try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12),mode,nativeLanguage:nativeSel.value,targetLanguage:targetSel.value})});const data=await r.json();if(!r.ok)throw Error(data.error||"Something went wrong.");history.push({role:"assistant",content:data.reply});addMessage("assistant",data.reply);if(voiceMode)speakReply(data.reply);else{if("speechSynthesis"in window)window.speechSynthesis.cancel();lastSpokenReply=cleanForSpeech(data.reply);$("#voiceStageReply").textContent=data.reply;$("#voiceStageReplay").disabled=!lastSpokenReply;$("#voiceStageReplay").textContent="🔊 Speak reply";}}catch(e){const err=e.message||"I couldn’t connect just now. Please try again.";addMessage("assistant",err);if(voiceMode){$("#voiceStageReply").textContent=err;$("#voiceStageStatus").textContent="I couldn’t get a reply this time. Check your connection and try again."}}finally{send.disabled=false;send.textContent="Send ↑";input.focus()}}
+async function sendMessage(value){const text=(value??input.value).trim();if(!text||send.disabled)return;input.value="";ensureActiveChat();addMessage("user",text);history.push({role:"user",content:text});saveCurrentChat();send.disabled=true;send.textContent="Thinking…";status.textContent="";try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12),mode,nativeLanguage:nativeSel.value,targetLanguage:targetSel.value})});const data=await r.json();if(!r.ok)throw Error(data.error||"Something went wrong.");history.push({role:"assistant",content:data.reply});addMessage("assistant",data.reply);saveCurrentChat();if(voiceMode)speakReply(data.reply);else{if("speechSynthesis"in window)window.speechSynthesis.cancel();lastSpokenReply=cleanForSpeech(data.reply);$("#voiceStageReply").textContent=data.reply;$("#voiceStageReplay").disabled=!lastSpokenReply;$("#voiceStageReplay").textContent="🔊 Speak reply";}}catch(e){const err=e.message||"I couldn’t connect just now. Please try again.";addMessage("assistant",err);history.push({role:"assistant",content:err});saveCurrentChat();if(voiceMode){$("#voiceStageReply").textContent=err;$("#voiceStageStatus").textContent="I couldn’t get a reply this time. Check your connection and try again."}}finally{send.disabled=false;send.textContent="Send ↑";input.focus()}}
 $("#chatForm").addEventListener("submit",e=>{e.preventDefault();sendMessage()});messages.addEventListener("click",e=>{const b=e.target.closest("[data-prompt]");if(b)sendMessage(b.dataset.prompt)});
 document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>{mode=b.dataset.mode;updateMode()}));
 [nativeSel,targetSel].forEach(s=>s.addEventListener("change",()=>{updateMode();renderKeys();resetChat()}));
