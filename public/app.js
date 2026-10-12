@@ -122,33 +122,43 @@ function findLocalVoice(locale){
  if(!voice&&base==="en")voice=voices.find(v=>v.lang.toLowerCase()==="en-in")||voices.find(v=>v.lang.toLowerCase().startsWith("en-gb"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-"));
  return voice||null;
 }
+let onlineAudio=null, onlineAudioUrl=null, speechRequest=0;
+async function playOnlineSpeech(text){
+ const clean=cleanForSpeech(text);
+ if(!clean){$("#voiceStageStatus").textContent="There’s no text to speak.";return}
+ const requestId=++speechRequest;
+ if(onlineAudio){onlineAudio.pause();onlineAudio.currentTime=0;onlineAudio=null}
+ if(onlineAudioUrl){URL.revokeObjectURL(onlineAudioUrl);onlineAudioUrl=null}
+ $("#voiceStageStatus").textContent="Generating natural speech online…";
+ $("#voiceStageReplay").disabled=true;
+ try{
+  const response=await fetch("/api/speech",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:clean})});
+  if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||"Online speech generation failed.")}
+  const blob=await response.blob();
+  if(requestId!==speechRequest)return;
+  onlineAudioUrl=URL.createObjectURL(blob);
+  onlineAudio=new Audio(onlineAudioUrl);
+  onlineAudio.preload="auto";
+  onlineAudio.onended=()=>{$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";$("#voiceStageReplay").disabled=false;};
+  onlineAudio.onerror=()=>{$("#voiceStageStatus").textContent="The generated audio could not be played. Please tap Speak reply to try again.";$("#voiceStageReplay").disabled=false;};
+  await onlineAudio.play();
+  $("#voiceStageStatus").textContent="Speaking your reply…";
+ }catch(error){
+  if(requestId!==speechRequest)return;
+  $("#voiceStageStatus").textContent=error.message||"Couldn’t generate speech. Please try again.";
+  $("#voiceStageReplay").disabled=false;
+ }
+}
 function speakReply(text){
- if(!voiceMode){if("speechSynthesis"in window)window.speechSynthesis.cancel();return}
- if(!("speechSynthesis"in window)){status.textContent="Spoken replies aren’t supported in this browser. Try Chrome.";$("#voiceStageStatus").textContent=status.textContent;return}
- const spoken=cleanForSpeech(text);lastSpokenReply=spoken;$("#voiceStageReply").textContent=text;$("#voiceStageReplay").disabled=false;$("#voiceStageReplay").textContent=voiceMode?"🔊 Speak reply":"▶ Replay last reply";
- const synth=window.speechSynthesis;
- synth.cancel();
- const parts=speechParts(spoken);
- if(!parts.length){$("#voiceStageStatus").textContent="There’s no text to speak.";return}
- let index=0;
- const speakNext=()=>{
-  if(index>=parts.length){$("#voiceStageStatus").textContent=voiceMode?"Reply spoken. Tap Speak when you’re ready to answer.":"Reply finished.";return}
-  const part=parts[index++],u=new SpeechSynthesisUtterance(part.text);
-  u.lang=speechLocale(part.language);u.rate=0.9;u.pitch=1;
-  const voice=findLocalVoice(u.lang);if(voice){u.voice=voice;if(!voice.lang.toLowerCase().startsWith(u.lang.split("-")[0].toLowerCase()+"-")&&voice.lang.toLowerCase()!==u.lang.toLowerCase())u.lang=voice.lang;}
-  u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Speaking your reply…":"Playing message aloud…")+(voice?"":" Your device may need an Indian-language voice installed for accurate pronunciation.")};
-  u.onend=speakNext;
-  u.onerror=()=>{$("#voiceStageStatus").textContent=part.language==="Telugu"?"Chrome has no working Telugu speech voice on this computer. Install a Telugu text-to-speech voice in Windows, or use a cloud Telugu voice service.":"Speech playback failed. Tap Speak reply to try again.";$("#voiceStageReplay").textContent="🔊 Speak reply";};
-  synth.resume();
-  setTimeout(()=>{try{synth.speak(u)}catch(e){$("#voiceStageStatus").textContent="Could not start audio. Try tapping Speak reply again."}},80);
- };
- const startSpeaking=()=>{if(index===0)speakNext()};
- if(synth.getVoices().length)startSpeaking();
- else {synth.onvoiceschanged=()=>{synth.onvoiceschanged=null;startSpeaking()};setTimeout(()=>{if(index===0){synth.onvoiceschanged=null;startSpeaking()}},700)}
- if(!voiceMode)status.textContent="Playing message aloud.";
+ if(!voiceMode)return;
+ lastSpokenReply=cleanForSpeech(text);
+ $("#voiceStageReply").textContent=text;
+ $("#voiceStageReplay").textContent="🔊 Speak reply";
+ $("#voiceStageReplay").disabled=false;
+ playOnlineSpeech(lastSpokenReply);
 }
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Listening in "+nativeSel.value+". Tap Speak and I’ll reply aloud in the language you use.";status.textContent="Voice mode listens in your “I understand” language ("+nativeSel.value+"). Change that selection to switch your speaking language.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else if("speechSynthesis"in window){speechSynthesis.cancel()}});
-$("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;if(!("speechSynthesis"in window)){$("#voiceStageStatus").textContent="Spoken replies aren’t supported in this browser. Try Chrome.";return}const synth=window.speechSynthesis;synth.cancel();synth.resume();const parts=speechParts(lastSpokenReply);let i=0;$("#voiceStageStatus").textContent="Starting audio…";const next=()=>{if(i>=parts.length){$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";return}const part=parts[i++],u=new SpeechSynthesisUtterance(part.text);u.lang=speechLocale(part.language);u.rate=0.9;u.pitch=1;const v=findLocalVoice(u.lang);if(v){u.voice=v;if(!v.lang.toLowerCase().startsWith(u.lang.split("-")[0].toLowerCase()+"-")&&v.lang.toLowerCase()!==u.lang.toLowerCase())u.lang=v.lang;}u.onstart=()=>{$("#voiceStageStatus").textContent="Speaking reply…"};u.onend=next;u.onerror=()=>{$("#voiceStageStatus").textContent="Your browser or device blocked speech. Try Chrome and check that media volume is on."};setTimeout(()=>{synth.resume();synth.speak(u)},100)};setTimeout(next,120)});
+$("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;playOnlineSpeech(lastSpokenReply)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
 $("#year")?.remove();updateMode();
 
