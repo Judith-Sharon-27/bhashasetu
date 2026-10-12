@@ -205,7 +205,7 @@ function speakReply(text){
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Listening in "+nativeSel.value+". Tap Speak and I’ll reply aloud in the language you use.";status.textContent="Voice mode listens in your “I understand” language ("+nativeSel.value+"). Change that selection to switch your speaking language.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else{speechRequest++;if(onlineAudio){onlineAudio.pause();onlineAudio.currentTime=0;onlineAudio=null}if(onlineAudioUrl){URL.revokeObjectURL(onlineAudioUrl);onlineAudioUrl=null}if("speechSynthesis"in window)speechSynthesis.cancel()}});
 $("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;playOnlineSpeech(lastSpokenReply)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
-$("#year")?.remove();updateMode();
+$("#newChat").addEventListener("click",()=>{if(history.length)saveCurrentChat();startNewChat();});renderHistory();$("#year")?.remove();updateMode();
 
 const phoneticInput=$("#phoneticInput");
 $("#convertPhonetic").addEventListener("click",()=>{const value=phoneticInput.value.trim();if(!value)return;insert(transliterateRoman(value,targetSel.value));phoneticInput.value=""});
