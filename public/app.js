@@ -117,8 +117,9 @@ function findLocalVoice(locale){
  const wanted=locale.toLowerCase(),base=wanted.split("-")[0];
  let voice=voices.find(v=>v.lang.toLowerCase()===wanted);
  if(!voice)voice=voices.find(v=>v.lang.toLowerCase().startsWith(base+"-"));
- if(!voice&&base==="en")voice=voices.find(v=>v.lang.toLowerCase().startsWith("en-in"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-gb"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-"));
- if(!voice)voice=voices.find(v=>v.default)||voices[0]||null;
+ // Never force an English/default voice to read Telugu script: some Windows/Chrome
+ // voices silently fail on unsupported scripts. Leave the requested locale intact.
+ if(!voice&&base==="en")voice=voices.find(v=>v.lang.toLowerCase()==="en-in")||voices.find(v=>v.lang.toLowerCase().startsWith("en-gb"))||voices.find(v=>v.lang.toLowerCase().startsWith("en-"));
  return voice||null;
 }
 function speakReply(text){
@@ -137,7 +138,7 @@ function speakReply(text){
   const voice=findLocalVoice(u.lang);if(voice){u.voice=voice;if(!voice.lang.toLowerCase().startsWith(u.lang.split("-")[0].toLowerCase()+"-")&&voice.lang.toLowerCase()!==u.lang.toLowerCase())u.lang=voice.lang;}
   u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Speaking your reply…":"Playing message aloud…")+(voice?"":" Your device may need an Indian-language voice installed for accurate pronunciation.")};
   u.onend=speakNext;
-  u.onerror=()=>{$("#voiceStageStatus").textContent="Automatic playback was blocked or unavailable. Tap the Speak reply button below.";$("#voiceStageReplay").textContent="🔊 Speak reply";};
+  u.onerror=()=>{$("#voiceStageStatus").textContent=part.language==="Telugu"?"Chrome has no working Telugu speech voice on this computer. Install a Telugu text-to-speech voice in Windows, or use a cloud Telugu voice service.":"Speech playback failed. Tap Speak reply to try again.";$("#voiceStageReplay").textContent="🔊 Speak reply";};
   synth.resume();
   setTimeout(()=>{try{synth.speak(u)}catch(e){$("#voiceStageStatus").textContent="Could not start audio. Try tapping Speak reply again."}},80);
  };
