@@ -34,7 +34,11 @@ function rateLimit(req, res, next) {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, aiConfigured: Boolean(process.env.OPENAI_API_KEY) });
+  res.json({
+    ok: true,
+    aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
+    aiProvider: process.env.GEMINI_API_KEY ? "gemini" : (process.env.OPENAI_API_KEY ? "openai" : null)
+  });
 });
 
 app.post("/api/chat", rateLimit, async (req, res) => {
@@ -55,28 +59,57 @@ app.post("/api/chat", rateLimit, async (req, res) => {
   if (!safe.length || safe[safe.length - 1].role !== "user") {
     return res.status(400).json({ error: "Please send a message to begin." });
   }
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(503).json({ error: "Live AI isn't configured yet. Add OPENAI_API_KEY to the server environment." });
-  }
+
+  const instruction = mode === "learn"
+    ? `You are BhashaSetu, a friendly, patient multilingual language tutor. The learner understands ${nativeLanguage} and wants to learn ${targetLanguage}. Explain meaning, grammar, and corrections in ${nativeLanguage}. Include natural ${targetLanguage} examples and their ${nativeLanguage} meanings. When useful, include pronunciation or transliteration in Latin letters. Answer open-ended questions and adapt to the learner's level. If the learner writes in a different Indian language, acknowledge it and clarify when needed, but keep explanations in ${nativeLanguage} and lesson examples in ${targetLanguage}. Do not claim every language or dialect is identical; be honest about uncertainty.`
+    : `You are BhashaSetu, a warm open-ended conversation partner. Reply in the same language as the user's latest message, including Indian languages and mixed-language messages. If the language is unclear, politely ask which language they prefer. Do not force a lesson unless asked.`;
 
   try {
-    const instruction = mode === "learn"
-      ? `You are BhashaSetu, a friendly, patient multilingual language tutor. The learner understands ${nativeLanguage} and wants to learn ${targetLanguage}. Explain meaning, grammar, and corrections in ${nativeLanguage}. Include natural ${targetLanguage} examples and their ${nativeLanguage} meanings. When useful, include pronunciation or transliteration in Latin letters. Answer open-ended questions and adapt to the learner's level. If the learner writes in a different Indian language, acknowledge it and clarify when needed, but keep explanations in ${nativeLanguage} and lesson examples in ${targetLanguage}. Do not claim every language or dialect is identical; be honest about uncertainty.`
-      : `You are BhashaSetu, a warm open-ended conversation partner. Reply in the same language as the user's latest message, including Indian languages and mixed-language messages. If the language is unclear, politely ask which language they prefer. Do not force a lesson unless asked.`;
+    let reply;
+    // Prefer Gemini when configured, allowing free-tier testing without OpenAI credits.
+    if (process.env.GEMINI_API_KEY) {
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: instruction }] },
+          contents: safe.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }]
+          })),
+          generationConfig: { temperature: 0.6, maxOutputTokens: 900 }
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = data.error?.message || `Gemini API returned HTTP ${response.status}`;
+        console.error("Gemini request failed:", response.status, detail);
+        return res.status(502).json({ error: "Gemini couldn't respond. Check the Gemini API key, model access, and free-tier quota in Google AI Studio." });
+      }
+      reply = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
+    } else if (process.env.OPENAI_API_KEY) {
+      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const result = await client.chat.completions.create({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [{ role: "system", content: instruction }, ...safe],
+        temperature: 0.6,
+        max_tokens: 900
+      });
+      reply = result.choices?.[0]?.message?.content;
+    } else {
+      return res.status(503).json({ error: "Live AI isn't configured yet. Add GEMINI_API_KEY to the server environment." });
+    }
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const result = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages: [{ role: "system", content: instruction }, ...safe],
-      temperature: 0.6,
-      max_tokens: 900
-    });
-    const reply = result.choices?.[0]?.message?.content;
     if (!reply) return res.status(502).json({ error: "The AI returned an empty response. Please try again." });
     res.json({ reply });
   } catch (error) {
     console.error("AI request failed:", error.message);
-    res.status(502).json({ error: "The AI service couldn't respond. Check the server configuration and try again." });
+    res.status(502).json({ error: "The AI service couldn't respond. Check the server logs and try again." });
   }
 });
 
