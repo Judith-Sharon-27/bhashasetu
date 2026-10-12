@@ -136,7 +136,7 @@ app.post("/api/speech", rateLimit, async (req, res) => {
     return res.status(503).json({ error: "Online speech is not configured. Add GEMINI_API_KEY in Render environment variables." });
   }
   try {
-    const model = process.env.GEMINI_TTS_MODEL || "gemini-3.1-flash-tts-preview";
+    const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
