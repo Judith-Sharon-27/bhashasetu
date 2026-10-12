@@ -136,7 +136,8 @@ function speakReply(text){
   u.onstart=()=>{$("#voiceStageStatus").textContent=(voiceMode?"Speaking your reply…":"Playing message aloud…")+(voice?"":" Your device may need an Indian-language voice installed for accurate pronunciation.")};
   u.onend=speakNext;
   u.onerror=()=>{$("#voiceStageStatus").textContent="Automatic playback was blocked or unavailable. Tap the Speak reply button below.";$("#voiceStageReplay").textContent="🔊 Speak reply";};
-  synth.speak(u);
+  synth.resume();
+  setTimeout(()=>{try{synth.speak(u)}catch(e){$("#voiceStageStatus").textContent="Could not start audio. Try tapping Speak reply again."}},80);
  };
  const startSpeaking=()=>{if(index===0)speakNext()};
  if(synth.getVoices().length)startSpeaking();
@@ -144,7 +145,7 @@ function speakReply(text){
  if(!voiceMode)status.textContent="Playing message aloud.";
 }
 $("#voiceModeToggle").addEventListener("click",()=>{voiceMode=!voiceMode;if(voiceMode){mode="chat";updateMode()}$(".chat").classList.toggle("voice-mode",voiceMode);$("#voiceModeToggle").setAttribute("aria-pressed",String(voiceMode));$("#voiceModeToggle").textContent=voiceMode?"◉ Exit voice mode":"◉ Voice mode";$("#voiceStage").hidden=!voiceMode;if(voiceMode){$("#voiceStageStatus").textContent="Voice mode is on. Listening in "+nativeSel.value+". Tap Speak and I’ll reply aloud in the language you use.";status.textContent="Voice mode listens in your “I understand” language ("+nativeSel.value+"). Change that selection to switch your speaking language.";if(lastSpokenReply)$("#voiceStageReply").textContent=lastSpokenReply}else if("speechSynthesis"in window){speechSynthesis.cancel()}});
-$("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;const text=lastSpokenReply;if("speechSynthesis"in window){speechSynthesis.cancel();const parts=speechParts(text);let i=0;const next=()=>{if(i>=parts.length){$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";return}const part=parts[i++],u=new SpeechSynthesisUtterance(part.text);u.lang=speechLocale(part.language);u.rate=0.86;const v=findLocalVoice(u.lang);if(v)u.voice=v;u.onend=next;u.onerror=()=>{$("#voiceStageStatus").textContent="Could not play this voice. Check your device voice settings."};speechSynthesis.speak(u)};next()}});
+$("#voiceStageReplay").addEventListener("click",()=>{if(!lastSpokenReply)return;if(!("speechSynthesis"in window)){$("#voiceStageStatus").textContent="Spoken replies aren’t supported in this browser. Try Chrome.";return}const synth=window.speechSynthesis;synth.cancel();synth.resume();const parts=speechParts(lastSpokenReply);let i=0;$("#voiceStageStatus").textContent="Starting audio…";const next=()=>{if(i>=parts.length){$("#voiceStageStatus").textContent="Reply spoken. Tap Speak when you’re ready to answer.";return}const part=parts[i++],u=new SpeechSynthesisUtterance(part.text);u.lang=speechLocale(part.language);u.rate=0.9;u.pitch=1;const v=findLocalVoice(u.lang);if(v)u.voice=v;u.onstart=()=>{$("#voiceStageStatus").textContent="Speaking reply…"};u.onend=next;u.onerror=()=>{$("#voiceStageStatus").textContent="Your browser or device blocked speech. Try Chrome and check that media volume is on."};setTimeout(()=>{synth.resume();synth.speak(u)},100)};setTimeout(next,120)});
 messages.addEventListener("dblclick",e=>{const bubble=e.target.closest(".bubble");if(!bubble)return;speakReply(bubble.innerText)});
 $("#year")?.remove();updateMode();
 
