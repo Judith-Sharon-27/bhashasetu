@@ -113,5 +113,64 @@ app.post("/api/chat", rateLimit, async (req, res) => {
   }
 });
 
+
+function pcmToWav(pcm, sampleRate = 24000, channels = 1, bitsPerSample = 16) {
+  const header = Buffer.alloc(44);
+  const byteRate = sampleRate * channels * bitsPerSample / 8;
+  const blockAlign = channels * bitsPerSample / 8;
+  header.write("RIFF", 0); header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8); header.write("fmt ", 12); header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32); header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36); header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+app.post("/api/speech", rateLimit, async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!text || text.length > 3000) {
+    return res.status(400).json({ error: "Send text between 1 and 3000 characters for speech." });
+  }
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: "Online speech is not configured. Add GEMINI_API_KEY in Render environment variables." });
+  }
+  try {
+    const model = process.env.GEMINI_TTS_MODEL || "gemini-3.1-flash-tts-preview";
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Read the following text aloud naturally, preserving its original language and wording. Use a warm, clear, conversational voice:\\n\\n${text}` }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || "Kore" } } }
+        }
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("Gemini TTS failed:", response.status, data.error?.message || "Unknown error");
+      return res.status(502).json({ error: "Online speech generation failed. Check that your Gemini API key has access to the TTS model and available quota." });
+    }
+    const audioPart = data.candidates?.[0]?.content?.parts?.find(part => part.inlineData?.data);
+    if (!audioPart?.inlineData?.data) {
+      console.error("Gemini TTS returned no audio:", JSON.stringify(data).slice(0, 1000));
+      return res.status(502).json({ error: "The speech service returned no audio. Please try again." });
+    }
+    const pcm = Buffer.from(audioPart.inlineData.data, "base64");
+    const mime = audioPart.inlineData.mimeType || "";
+    // Gemini TTS currently returns raw 24 kHz PCM for this endpoint.
+    const wav = mime.includes("wav") ? pcm : pcmToWav(pcm);
+    res.set("Content-Type", "audio/wav");
+    res.set("Cache-Control", "no-store");
+    res.send(wav);
+  } catch (error) {
+    console.error("Gemini TTS request failed:", error.message);
+    res.status(502).json({ error: "Online speech generation timed out or could not connect. Please try again." });
+  }
+});
+
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => console.log("BhashaSetu running on port " + port));
